@@ -21,11 +21,11 @@ class SensorModel:
         ####################################
         # TODO
         # Adjust these parameters
-        self.alpha_hit = 0
-        self.alpha_short = 0
-        self.alpha_max = 0
-        self.alpha_rand = 0
-        self.sigma_hit = 0
+        self.alpha_hit = 0.74
+        self.alpha_short = 0.07
+        self.alpha_max = 0.07
+        self.alpha_rand = 0.12
+        self.sigma_hit = 8.0
 
         # Your sensor table will be a `table_width` x `table_width` np array:
         self.table_width = 201
@@ -71,7 +71,19 @@ class SensorModel:
         returns:
             No return type. Directly modify `self.sensor_model_table`.
         """
-        raise NotImplementedError
+        p_hit_table = np.zeros((self.table_width, self.table_width))
+        other_p_table = np.zeros((self.table_width, self.table_width))
+        for z in range(self.table_width):
+            for d in range(self.table_width):
+                p_hit_table[z, d] = self.p_hit(z, self.table_width, d, self.sigma_hit)
+                other_p_table[z, d] = (self.alpha_short * self.p_short(z, d) 
+                                        + self.alpha_max * self.p_max(z, self.table_width) 
+                                        + self.alpha_rand * self.p_rand(z, self.table_width))
+        col_sums = p_hit_table.sum(axis=0)
+        p_hit_table /= col_sums # normalize p_hit across d values
+        self.sensor_model_table = other_p_table + self.alpha_hit * p_hit_table
+        col_sums = self.sensor_model_table.sum(axis=0)
+        self.sensor_model_table /= col_sums # normalize full table along columns
 
     def evaluate(self, particles, observation):
         """
@@ -137,3 +149,25 @@ class SensorModel:
         self.map_set = True
 
         print("Map initialized")
+
+    def p_hit(self, z, z_max, d, sigma):
+        p = 0
+        if 0 <= z <= z_max:
+            exp_term = - (z-d)**2 / (2 * sigma**2)
+            p = (1/np.sqrt(2 * np.pi * sigma**2)) * np.exp(exp_term)
+        return p
+
+    def p_short(self, z, d):
+        p = 0
+        if 0 <= z <= d and d != 0:
+            p = (2/d) * (1 - z / d)
+        return p
+
+    def p_max(self, z, z_max):
+        return 1 if z == z_max else 0
+
+    def p_rand(self, z, z_max):
+        p = 0
+        if 0 <= z <= z_max:
+            p = 1./ z_max
+        return  p
