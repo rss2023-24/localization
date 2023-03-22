@@ -18,6 +18,8 @@ class SensorModel:
         self.num_beams_per_particle = rospy.get_param("~num_beams_per_particle")
         self.scan_theta_discretization = rospy.get_param("~scan_theta_discretization")
         self.scan_field_of_view = rospy.get_param("~scan_field_of_view")
+        self.lidar_scale_to_map_scale = rospy.get_param("~scan_field_of_view")
+
 
         ####################################
         # TODO
@@ -27,6 +29,7 @@ class SensorModel:
         self.alpha_max = 0.07
         self.alpha_rand = 0.12
         self.sigma_hit = 8.0
+        self.squash = 1/2.2
 
         # Your sensor table will be a `table_width` x `table_width` np array:
         self.table_width = 201
@@ -111,15 +114,34 @@ class SensorModel:
             return
 
         ####################################
-        # TODO
         # Evaluate the sensor model here!
         #
         # You will probably want to use this function
         # to perform ray tracing from all the particles.
         # This produces a matrix of size N x num_beams_per_particle 
 
-        scans = self.scan_sim.scan(particles)
+        # Downsample LIDAR data
+        idx = np.round(np.linspace(0, len(observation) - 1, self.num_beams_per_particle, endpoint=True)).astype(int)
+        observation = observation[idx]
 
+        # Generate Scan Data
+        scans = self.scan_sim.scan(particles)
+        
+        # Convert measurements to pixel space
+        conversion_factor = self.map_resolution*self.lidar_scale_to_map_scale
+        scaled_scans = np.clip(np.rint(scans / conversion_factor), 0, self.table_width-1).astype(int)
+        scaled_observation = np.clip(np.rint(observation / conversion_factor), 0, self.table_width-1).astype(int)
+
+        # Compute probablities
+        probabilities = np.prod(self.sensor_model_table[scaled_scans, scaled_observation], axis = 1)
+
+        # Smooth probability curve
+        probabilities = np.power(probabilities, self.squash)
+
+
+        rospy.logfatal(len(probabilities))
+
+        return probabilities
         ####################################
 
     def map_callback(self, map_msg):
@@ -149,18 +171,20 @@ class SensorModel:
         # Make the map set
         self.map_set = True
 
+        self.map_resolution = map_msg.info.resolution
+
         print("Map initialized")
 
     def p_hit(self, z, z_max, d, sigma):
         p = 0
-        if 0 <= z <= z_max:
+        if 0 <= z and z <= z_max:
             exp_term = - (z-d)**2 / (2 * sigma**2)
             p = (1/np.sqrt(2 * np.pi * sigma**2)) * np.exp(exp_term)
         return p
 
     def p_short(self, z, d):
         p = 0
-        if 0 <= z <= d and d != 0:
+        if 0 <= z and z <= d and d != 0:
             p = (2/d) * (1 - z / d)
         return p
 
@@ -169,6 +193,6 @@ class SensorModel:
 
     def p_rand(self, z, z_max):
         p = 0
-        if 0 <= z <= z_max:
+        if 0 <= z and z <= z_max:
             p = 1./ z_max
         return  p
