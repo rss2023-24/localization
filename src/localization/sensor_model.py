@@ -88,6 +88,7 @@ class SensorModel:
         self.sensor_model_table = other_p_table + self.alpha_hit * p_hit_table
         col_sums = self.sensor_model_table.sum(axis=0)
         self.sensor_model_table /= col_sums # normalize full table along columns
+        
 
     def evaluate(self, particles, observation):
         """
@@ -140,12 +141,12 @@ class SensorModel:
         scaled_observation = np.rint(clipped_observation).astype(np.uint16)
 
         # Compute probablities
-        probabilities = np.prod(self.sensor_model_table[scaled_scans, scaled_observation], axis = 1)
+        probabilities = np.prod(self.sensor_model_table[scaled_observation, scaled_scans], axis = 1)
 
         # Smooth probability curve
-        rospy.logfatal(self.squash)
-        np.power(probabilities, self.squash, probabilities)
-
+        rospy.logfatal(probabilities)
+        probabilities = np.power(probabilities, 1.0/2.2)
+        rospy.logfatal(probabilities)
         return probabilities
         ####################################
 
