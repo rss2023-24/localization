@@ -1,3 +1,4 @@
+from __future__ import division
 import numpy as np
 from localization.scan_simulator_2d import PyScanSimulator2D
 # Try to change to just `from scan_simulator_2d import PyScanSimulator2D` 
@@ -75,10 +76,10 @@ class SensorModel:
         other_p_table = np.zeros((self.table_width, self.table_width))
         for z in range(self.table_width):
             for d in range(self.table_width):
-                p_hit_table[z, d] = self.p_hit(z, self.table_width, d, self.sigma_hit)
+                p_hit_table[z, d] = self.p_hit(z, self.table_width-1, d, self.sigma_hit)
                 other_p_table[z, d] = (self.alpha_short * self.p_short(z, d) 
-                                        + self.alpha_max * self.p_max(z, self.table_width) 
-                                        + self.alpha_rand * self.p_rand(z, self.table_width))
+                                        + self.alpha_max * self.p_max(z, self.table_width-1) 
+                                        + self.alpha_rand * self.p_rand(z, self.table_width-1))
         col_sums = p_hit_table.sum(axis=0)
         p_hit_table /= col_sums # normalize p_hit across d values
         self.sensor_model_table = other_p_table + self.alpha_hit * p_hit_table
