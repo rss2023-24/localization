@@ -8,6 +8,8 @@ from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import PoseWithCovarianceStamped
 
+from threading import Lock
+import numpy as np
 
 class ParticleFilter:
 
@@ -28,10 +30,10 @@ class ParticleFilter:
         scan_topic = rospy.get_param("~scan_topic", "/scan")
         odom_topic = rospy.get_param("~odom_topic", "/odom")
         self.laser_sub = rospy.Subscriber(scan_topic, LaserScan,
-                                          YOUR_LIDAR_CALLBACK, # TODO: Fill this in
+                                          self.handle_scan,
                                           queue_size=1)
         self.odom_sub  = rospy.Subscriber(odom_topic, Odometry,
-                                          YOUR_ODOM_CALLBACK, # TODO: Fill this in
+                                          self.handle_odometry, 
                                           queue_size=1)
 
         #  *Important Note #2:* You must respond to pose
@@ -40,7 +42,7 @@ class ParticleFilter:
         #     "Pose Estimate" feature in RViz, which publishes to
         #     /initialpose.
         self.pose_sub  = rospy.Subscriber("/initialpose", PoseWithCovarianceStamped,
-                                          YOUR_POSE_INITIALIZATION_CALLBACK, # TODO: Fill this in
+                                          self.initialize_robot_pose,
                                           queue_size=1)
 
         #  *Important Note #3:* You must publish your pose estimate to
@@ -55,15 +57,44 @@ class ParticleFilter:
         self.motion_model = MotionModel()
         self.sensor_model = SensorModel()
 
-        # Implement the MCL algorithm
-        # using the sensor model and the motion model
-        #
-        # Make sure you include some way to initialize
-        # your particles, ideally with some sort
-        # of interactive interface in rviz
-        #
-        # Publish a transformation frame between the map
-        # and the particle_filter_frame.
+        # Create lock
+        self.particle_lock = Lock()
+
+        # Initialize particles
+        self.particles = np.zeros((self.num_particles, 3))
+        self.particle_indices = np.arange(0, self.num_particles)
+
+    def initialize_robot_pose(self, msg):
+        return 
+
+    def handle_odometry(self, msg):
+        pass 
+
+    def handle_scan(self, msg):
+        # Lock particles array
+        self.particle_lock.acquire()
+
+        # Downsample laser scan
+        raw_laserscan = np.array(msg.ranges)
+        idx = np.round(np.linspace(0, len(raw_laserscan) - 1, self.num_beams_per_particle, endpoint=True)).astype(int)
+        downsampled_laserscan = raw_laserscan.ranges[idx]
+
+        # Compute particle probabilities
+        self.sensor_model.evaluate(self.particles, downsampled_laserscan)
+
+        # Resample Particles
+
+
+        # Update robot pose
+        self.compute_robot_pose()
+
+
+        # Free particles array
+        self.particle_lock.release()
+
+    def compute_robot_pose(self):
+        pass
+
 
 
 if __name__ == "__main__":

@@ -121,10 +121,6 @@ class SensorModel:
         # to perform ray tracing from all the particles.
         # This produces a matrix of size N x num_beams_per_particle 
 
-        # Downsample LIDAR data
-        #idx = np.round(np.linspace(0, len(observation) - 1, self.num_beams_per_particle, endpoint=True)).astype(int)
-        #observation = observation[idx]
-
         # Generate Scan Data
         scans = self.scan_sim.scan(particles)
         
