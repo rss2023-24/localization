@@ -25,16 +25,14 @@ class MotionModel:
             particles: An updated matrix of the
                 same size
         """
-        odom = np.array(odometry)
-        particles_arr = np.array(particles)
         if not self.deterministic:
             # add Gaussian noise
-            odom += np.random.normal(0, self.noise_st_dev, 3)
-        particles_arr[:,0] = (np.cos(particles_arr[:,2]) * odom[0]
-                              - np.sin(particles_arr[:,2]) * odom[1]
-                              + particles_arr[:,0])
-        particles_arr[:,1] = (np.sin(particles_arr[:,2]) * odom[0]
-                              + np.cos(particles_arr[:,2]) * odom[1]
-                              + particles_arr[:,1])
-        particles_arr[:,2] += odom[2]
-        return particles_arr.tolist()
+            odometry += np.random.normal(0, self.noise_st_dev, 3)
+        particles[:,0] = (np.cos(particles[:,2]) * odometry[0]
+                              - np.sin(particles[:,2]) * odometry[1]
+                              + particles[:,0])
+        particles[:,1] = (np.sin(particles[:,2]) * odometry[0]
+                              + np.cos(particles[:,2]) * odometry[1]
+                              + particles[:,1])
+        particles[:,2] += odometry[2]
+        return particles
