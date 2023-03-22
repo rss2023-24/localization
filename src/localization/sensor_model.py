@@ -18,7 +18,7 @@ class SensorModel:
         self.num_beams_per_particle = rospy.get_param("~num_beams_per_particle")
         self.scan_theta_discretization = rospy.get_param("~scan_theta_discretization")
         self.scan_field_of_view = rospy.get_param("~scan_field_of_view")
-        self.lidar_scale_to_map_scale = rospy.get_param("~scan_field_of_view")
+        self.lidar_scale_to_map_scale = rospy.get_param("~lidar_scale_to_map_scale", 1.0)
 
 
         ####################################
@@ -29,7 +29,7 @@ class SensorModel:
         self.alpha_max = 0.07
         self.alpha_rand = 0.12
         self.sigma_hit = 8.0
-        self.squash = 1/2.2
+        self.squash = 1.0/2.2
 
         # Your sensor table will be a `table_width` x `table_width` np array:
         self.table_width = 201
@@ -77,8 +77,8 @@ class SensorModel:
         """
         p_hit_table = np.zeros((self.table_width, self.table_width))
         other_p_table = np.zeros((self.table_width, self.table_width))
-        for z in range(self.table_width):
-            for d in range(self.table_width):
+        for d in range(self.table_width):
+            for z in range(self.table_width):
                 p_hit_table[z, d] = self.p_hit(z, self.table_width-1, d, self.sigma_hit)
                 other_p_table[z, d] = (self.alpha_short * self.p_short(z, d) 
                                         + self.alpha_max * self.p_max(z, self.table_width-1) 
@@ -121,25 +121,30 @@ class SensorModel:
         # This produces a matrix of size N x num_beams_per_particle 
 
         # Downsample LIDAR data
-        idx = np.round(np.linspace(0, len(observation) - 1, self.num_beams_per_particle, endpoint=True)).astype(int)
-        observation = observation[idx]
+        #idx = np.round(np.linspace(0, len(observation) - 1, self.num_beams_per_particle, endpoint=True)).astype(int)
+        #observation = observation[idx]
 
         # Generate Scan Data
         scans = self.scan_sim.scan(particles)
         
         # Convert measurements to pixel space
-        conversion_factor = self.map_resolution*self.lidar_scale_to_map_scale
-        scaled_scans = np.clip(np.rint(scans / conversion_factor), 0, self.table_width-1).astype(int)
-        scaled_observation = np.clip(np.rint(observation / conversion_factor), 0, self.table_width-1).astype(int)
+        conversion_factor = float(self.map_resolution)*self.lidar_scale_to_map_scale
+
+        pixels_scans = scans / conversion_factor
+        pixels_observation = observation / conversion_factor
+
+        clipped_scans = np.clip(pixels_scans, 0, self.table_width - 1)
+        clipped_observation = np.clip(pixels_observation, 0, self.table_width - 1)
+
+        scaled_scans = np.rint(clipped_scans).astype(np.uint16)
+        scaled_observation = np.rint(clipped_observation).astype(np.uint16)
 
         # Compute probablities
         probabilities = np.prod(self.sensor_model_table[scaled_scans, scaled_observation], axis = 1)
 
         # Smooth probability curve
-        probabilities = np.power(probabilities, self.squash)
-
-
-        rospy.logfatal(len(probabilities))
+        rospy.logfatal(self.squash)
+        np.power(probabilities, self.squash, probabilities)
 
         return probabilities
         ####################################
