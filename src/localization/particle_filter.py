@@ -56,6 +56,9 @@ class ParticleFilter:
         #     "/map" frame.
         self.odom_pub  = rospy.Publisher("/pf/pose/odom", Odometry, queue_size = 1)
         
+# Particle Visualization
+        self.visualizer = rospy.Publisher("/particles", PoseArray, queue_size = 15)
+    
         # Initialize the models
         self.motion_model = MotionModel()
         self.sensor_model = SensorModel()
@@ -67,9 +70,24 @@ class ParticleFilter:
         self.particles = np.zeros((self.num_particles, 3))
         self.particle_indices = np.arange(0, self.num_particles)
 
+        # Tunable Parameters 
+        # TODO Tune this value
+        self.noise_st_dev = 1
+
     def initialize_robot_pose(self, msg):
+
+        # Extract clickd position
         pose = msg.pose.pose
         covariance_matrix = np.array(msg.pose.covariance)
+        roll, pitch, yaw = euler_from_quaternion(pose.orientation)
+        mean_position = [pose.positon.x, pose.position.y, yaw]
+
+        # Generate particles around clicked position
+        initial_x = np.random.normal(mean_position[0], self.noise_st_dev, self.num_particles)
+        initial_y = np.random.normal(mean_position[1], self.noise_st_dev, self.num_particles)
+        initial_theta = np.random.normal(mean_position[2], self.noise_st_dev, self.num_particles)
+        self.particles = np.column_stack((initial_x,initial_y,initial_theta))
+
 
 
     def handle_odometry(self, msg):
@@ -130,6 +148,22 @@ class ParticleFilter:
         self.odom_pub.publish(robot_odom)
 
         # Visualize particles if subscribed
+        if self.visualizer.get_num_connections() > 0:
+            particles_poses_array = []
+            particles_poses = PoseArray()
+
+            # Build poses
+            for i in range(self.num_particles):
+                new_pose = Pose()
+                new_pose.position = Point(self.particles[i, 0], self.particles[i, 1], 0)
+                new_pose.orientation = Quaternion(*quaternion_from_euler(0,0,self.particles[i, 2]))
+                particles_poses_array.append(new_pose)
+
+            # Publish possees
+            particles_poses.poses = particles_poses_array
+            self.visualizer.publish(particles_poses)
+
+
 
 
 if __name__ == "__main__":
