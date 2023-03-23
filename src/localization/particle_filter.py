@@ -6,7 +6,9 @@ from motion_model import MotionModel
 
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
+from geometry_msgs.msg import PoseWithCovarianceStamped, Quaternion, Pose, Point, PoseArray
+
 
 from threading import Lock
 import numpy as np
@@ -17,6 +19,7 @@ class ParticleFilter:
         # Get parameters
         self.particle_filter_frame = \
                 rospy.get_param("~particle_filter_frame")
+        self.num_particles = rospy.get_param("~num_particles")
 
         # Initialize publishers/subscribers
         #
@@ -65,36 +68,68 @@ class ParticleFilter:
         self.particle_indices = np.arange(0, self.num_particles)
 
     def initialize_robot_pose(self, msg):
-        return 
+        pose = msg.pose.pose
+        covariance_matrix = np.array(msg.pose.covariance)
+
 
     def handle_odometry(self, msg):
-        pass 
+        # Lock particles array
+        self.particle_lock.acquire()
+
+        # Parse Odometry
+        twist = msg.twist.twist
+        odom_dx = twist.linear.x
+        odom_dy = twist.linear.y
+        odom_dtheta = twist.angular.z
+
+        # Update particle positions
+        self.particles = self.motion_model.evaluate(self.particles, np.array([odom_dx,odom_dy, odom_dtheta]))
+
+        # Update robot pose
+        self.compute_robot_pose()
+
+        # Free particles array
+        self.particle_lock.release()
 
     def handle_scan(self, msg):
         # Lock particles array
         self.particle_lock.acquire()
 
         # Downsample laser scan
-        raw_laserscan = np.array(msg.ranges)
-        idx = np.round(np.linspace(0, len(raw_laserscan) - 1, self.num_beams_per_particle, endpoint=True)).astype(int)
-        downsampled_laserscan = raw_laserscan.ranges[idx]
+        laserscan = np.array(msg.ranges)
+        if len(laserscan) > self.num_beams_per_particle:
+            idx = np.round(np.linspace(0, len(laserscan) - 1, self.num_beams_per_particle, endpoint=True)).astype(int)
+            laserscan = laserscan[idx]
 
         # Compute particle probabilities
-        self.sensor_model.evaluate(self.particles, downsampled_laserscan)
+        probabilities = self.sensor_model.evaluate(self.particles, laserscan)
 
         # Resample Particles
-
+        sampled_indices = np.random.choice(self.particle_indices, self.num_particles, p=probabilities)
+        self.particles = self.particles[sampled_indices]
 
         # Update robot pose
         self.compute_robot_pose()
-
 
         # Free particles array
         self.particle_lock.release()
 
     def compute_robot_pose(self):
-        pass
+        #TODO Figure out if there is a better way to estimate pose
+        # Average location of all particles
+        average_x = np.average(self.particles[:, 0])
+        average_y = np.average(self.particles[:, 1])
+        average_theta = np.arctan2(np.sum(np.sin(self.particles[:, 2])), np.sum(np.cos(self.particles[:, 2]))) # Circular Mean
 
+        # Create Odometry object
+        robot_odom = Odometry()
+        robot_odom.pose.pose.position = Point(average_x, average_y, 0)
+        robot_odom.pose.pose.orientation = Quaternion(*quaternion_from_euler(0,0,average_theta))
+ 
+        # Publish robot pose
+        self.odom_pub.publish(robot_odom)
+
+        # Visualize particles if subscribed
 
 
 if __name__ == "__main__":
