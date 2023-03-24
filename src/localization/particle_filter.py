@@ -20,6 +20,14 @@ class ParticleFilter:
         self.particle_filter_frame = \
                 rospy.get_param("~particle_filter_frame")
         self.num_particles = rospy.get_param("~num_particles")
+        self.num_beams_per_particle = rospy.get_param("~num_beams_per_particle")
+
+        # Tunable Parameters 
+        # TODO Tune this value
+        self.noise_st_dev = 1
+        # Initialize the models
+        self.motion_model = MotionModel(self.noise_st_dev)
+        self.sensor_model = SensorModel()
 
         # Initialize publishers/subscribers
         #
@@ -56,12 +64,8 @@ class ParticleFilter:
         #     "/map" frame.
         self.odom_pub  = rospy.Publisher("/pf/pose/odom", Odometry, queue_size = 1)
         
-# Particle Visualization
+        # Particle Visualization
         self.visualizer = rospy.Publisher("/particles", PoseArray, queue_size = 15)
-    
-        # Initialize the models
-        self.motion_model = MotionModel()
-        self.sensor_model = SensorModel()
 
         # Create lock
         self.particle_lock = Lock()
@@ -70,9 +74,6 @@ class ParticleFilter:
         self.particles = np.zeros((self.num_particles, 3))
         self.particle_indices = np.arange(0, self.num_particles)
 
-        # Tunable Parameters 
-        # TODO Tune this value
-        self.noise_st_dev = 1
 
     def initialize_robot_pose(self, msg):
 
@@ -101,7 +102,7 @@ class ParticleFilter:
         odom_dtheta = twist.angular.z
 
         # Update particle positions
-        self.particles = self.motion_model.evaluate(self.particles, np.array([odom_dx,odom_dy, odom_dtheta]))
+        self.particles = self.motion_model.evaluate(self.particles, np.array([odom_dx, odom_dy, odom_dtheta]))
 
         # Update robot pose
         self.compute_robot_pose()
@@ -121,6 +122,7 @@ class ParticleFilter:
 
         # Compute particle probabilities
         probabilities = self.sensor_model.evaluate(self.particles, laserscan)
+        probabilities /= np.sum(probabilities) # normalize so probabilities sum to 1
 
         # Resample Particles
         sampled_indices = np.random.choice(self.particle_indices, self.num_particles, p=probabilities)
