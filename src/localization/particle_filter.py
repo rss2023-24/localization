@@ -1,13 +1,14 @@
 #!/usr/bin/env python2
 
 import rospy
+import tf2_ros
 from sensor_model import SensorModel
 from motion_model import MotionModel
 
 from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
-from geometry_msgs.msg import PoseWithCovarianceStamped, Quaternion, Pose, Point, PoseArray
+from geometry_msgs.msg import PoseWithCovarianceStamped, Quaternion, Pose, Point, TransformStamped, PoseArray
 from std_msgs.msg import Header
 
 
@@ -26,19 +27,12 @@ class ParticleFilter:
         # Tunable Parameters 
         # TODO Tune this value
         self.noise_st_dev = 1
+
         # Initialize the models
         self.motion_model = MotionModel()
         self.sensor_model = SensorModel()
 
         # Initialize publishers/subscribers
-        #
-        #  *Important Note #1:* It is critical for your particle
-        #     filter to obtain the following topic names from the
-        #     parameters for the autograder to work correctly. Note
-        #     that while the Odometry message contains both a pose and
-        #     a twist component, you will only be provided with the
-        #     twist component, so you should rely only on that
-        #     information, and *not* use the pose component.
         scan_topic = rospy.get_param("~scan_topic", "/scan")
         odom_topic = rospy.get_param("~odom_topic", "/odom")
         self.laser_sub = rospy.Subscriber(scan_topic, LaserScan,
@@ -47,33 +41,20 @@ class ParticleFilter:
         self.odom_sub  = rospy.Subscriber(odom_topic, Odometry,
                                           self.handle_odometry, 
                                           queue_size=1)
-
-        #  *Important Note #2:* You must respond to pose
-        #     initialization requests sent to the /initialpose
-        #     topic. You can test that this works properly using the
-        #     "Pose Estimate" feature in RViz, which publishes to
-        #     /initialpose.
         self.pose_sub  = rospy.Subscriber("/initialpose", PoseWithCovarianceStamped,
                                           self.initialize_robot_pose,
                                           queue_size=1)
-
-        #  *Important Note #3:* You must publish your pose estimate to
-        #     the following topic. In particular, you must use the
-        #     pose field of the Odometry message. You do not need to
-        #     provide the twist part of the Odometry message. The
-        #     odometry you publish here should be with respect to the
-        #     "/map" frame.
         self.odom_pub  = rospy.Publisher("/pf/pose/odom", Odometry, queue_size = 1)
-        
-        # Particle Visualization
+        self.transform_pub = tf2_ros.TransformBroadcaster()
         self.visualizer = rospy.Publisher("/particles", PoseArray, queue_size = 15)
 
         # Create lock
         self.particle_lock = Lock()
 
-        # Initialize particles
+        # Initialize variables
         self.particles = np.zeros((self.num_particles, 3))
         self.particle_indices = np.arange(0, self.num_particles)
+        self.prev_time = rospy.get_time()
 
 
     def initialize_robot_pose(self, msg):
@@ -94,17 +75,22 @@ class ParticleFilter:
 
 
     def handle_odometry(self, msg):
-        # Lock particles array
-        self.particle_lock.acquire()
 
         # Parse Odometry
         twist = msg.twist.twist
         odom_dx = twist.linear.x
         odom_dy = twist.linear.y
         odom_dtheta = twist.angular.z
+        odom = np.array([odom_dx, odom_dy, odom_dtheta])
+
+        # Scale odomotery by time passed
+        curr_time = rospy.get_time() 
+        odom *= (curr_time - self.prev_time)
+        self.prev_time = curr_time
 
         # Update particle positions
-        self.particles = self.motion_model.evaluate(self.particles, np.array([odom_dx, odom_dy, odom_dtheta]))
+        self.particle_lock.acquire()
+        self.particles = self.motion_model.evaluate(self.particles, odom)
 
         # Update robot pose
         self.compute_robot_pose()
@@ -113,8 +99,6 @@ class ParticleFilter:
         self.particle_lock.release()
 
     def handle_scan(self, msg):
-        # Lock particles array
-        self.particle_lock.acquire()
 
         # Downsample laser scan
         laserscan = np.array(msg.ranges)
@@ -123,6 +107,7 @@ class ParticleFilter:
             laserscan = laserscan[idx]
 
         # Compute particle probabilities
+        self.particle_lock.acquire()
         probabilities = self.sensor_model.evaluate(self.particles, laserscan)
         if probabilities is None:
             self.particle_lock.release()
@@ -146,19 +131,31 @@ class ParticleFilter:
         average_y = np.average(self.particles[:, 1])
         average_theta = np.arctan2(np.sum(np.sin(self.particles[:, 2])), np.sum(np.cos(self.particles[:, 2]))) # Circular Mean
 
-        # Create Odometry object
-        robot_odom = Odometry()
-        robot_odom.header = Header(frame_id='/map')
-        robot_odom.pose.pose.position = Point(average_x, average_y, 0)
-        robot_odom.pose.pose.orientation = Quaternion(*quaternion_from_euler(0,0,average_theta))
- 
-        # Publish robot pose
-        self.odom_pub.publish(robot_odom)
+        # Create Transform
+        transform_obj = TransformStamped()
+        curr_time = rospy.Time.now()
+        transform_obj.header = Header(frame_id='/map', stamp=curr_time)
+        transform_obj.child_frame_id = self.particle_filter_frame
+        transform_obj.transform.translation = Point(average_x, average_y, 0)
+        transform_obj.transform.rotation = Quaternion(*quaternion_from_euler(0,0,average_theta))
+        self.transform_pub.sendTransform(transform_obj)
+
+        # Create Odometry object if subscribed
+        if self.odom_pub.get_num_connections() > 0:
+            robot_odom = Odometry()
+            robot_odom.header = Header(frame_id='/map', stamp=curr_time)
+            robot_odom.child_frame_id = self.particle_filter_frame
+            robot_odom.pose.pose.position = Point(average_x, average_y, 0)
+            robot_odom.pose.pose.orientation = Quaternion(*quaternion_from_euler(0,0,average_theta))
+    
+            # Publish robot pose
+            self.odom_pub.publish(robot_odom)
 
         # Visualize particles if subscribed
         if self.visualizer.get_num_connections() > 0:
             particles_poses_array = []
             particles_poses = PoseArray()
+            particles_poses.header = Header(frame_id='/map', stamp=curr_time)
 
             # Build poses
             for i in range(self.num_particles):
