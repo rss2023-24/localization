@@ -27,7 +27,7 @@ class ParticleFilter:
         # TODO Tune this value
         self.noise_st_dev = 1
         # Initialize the models
-        self.motion_model = MotionModel(self.noise_st_dev)
+        self.motion_model = MotionModel()
         self.sensor_model = SensorModel()
 
         # Initialize publishers/subscribers
