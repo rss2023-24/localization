@@ -140,9 +140,7 @@ class SensorModel:
         probabilities = np.prod(self.sensor_model_table[scaled_observation, scaled_scans], axis = 1)
 
         # Smooth probability curve
-        rospy.logfatal(probabilities)
         probabilities = np.power(probabilities, 1.0/2.2)
-        rospy.logfatal(probabilities)
         return probabilities
         ####################################
 

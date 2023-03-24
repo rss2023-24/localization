@@ -8,6 +8,7 @@ from sensor_msgs.msg import LaserScan
 from nav_msgs.msg import Odometry
 from tf.transformations import euler_from_quaternion, quaternion_from_euler
 from geometry_msgs.msg import PoseWithCovarianceStamped, Quaternion, Pose, Point, PoseArray
+from std_msgs.msg import Header
 
 
 from threading import Lock
@@ -80,8 +81,9 @@ class ParticleFilter:
         # Extract clickd position
         pose = msg.pose.pose
         covariance_matrix = np.array(msg.pose.covariance)
-        roll, pitch, yaw = euler_from_quaternion(pose.orientation)
-        mean_position = [pose.positon.x, pose.position.y, yaw]
+        orientation = pose.orientation
+        roll, pitch, yaw = euler_from_quaternion([orientation.x, orientation.y, orientation.z, orientation.w])
+        mean_position = [pose.position.x, pose.position.y, yaw]
 
         # Generate particles around clicked position
         initial_x = np.random.normal(mean_position[0], self.noise_st_dev, self.num_particles)
@@ -122,6 +124,9 @@ class ParticleFilter:
 
         # Compute particle probabilities
         probabilities = self.sensor_model.evaluate(self.particles, laserscan)
+        if probabilities is None:
+            self.particle_lock.release()
+            return
         probabilities /= np.sum(probabilities) # normalize so probabilities sum to 1
 
         # Resample Particles
@@ -143,6 +148,7 @@ class ParticleFilter:
 
         # Create Odometry object
         robot_odom = Odometry()
+        robot_odom.header = Header(frame_id='/map')
         robot_odom.pose.pose.position = Point(average_x, average_y, 0)
         robot_odom.pose.pose.orientation = Quaternion(*quaternion_from_euler(0,0,average_theta))
  
