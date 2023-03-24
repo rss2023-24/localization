@@ -1,0 +1,4 @@
+<launch>
+  <node pkg="localization" name="test_drive" type="test_drive.py" output="screen">
+  </node>
+</launch>
