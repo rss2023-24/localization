@@ -32,6 +32,14 @@ class ParticleFilter:
         self.motion_model = MotionModel()
         self.sensor_model = SensorModel()
 
+        # Create lock
+        self.particle_lock = Lock()
+
+        # Initialize variables
+        self.particles = np.zeros((self.num_particles, 3))
+        self.particle_indices = np.arange(0, self.num_particles)
+        self.prev_time = rospy.get_time()
+
         # Initialize publishers/subscribers
         scan_topic = rospy.get_param("~scan_topic", "/scan")
         odom_topic = rospy.get_param("~odom_topic", "/odom")
@@ -40,21 +48,14 @@ class ParticleFilter:
                                           queue_size=1)
         self.odom_sub  = rospy.Subscriber(odom_topic, Odometry,
                                           self.handle_odometry, 
-                                          queue_size=1)
+                                          queue_size=1) 
         self.pose_sub  = rospy.Subscriber("/initialpose", PoseWithCovarianceStamped,
-                                          self.initialize_robot_pose,
-                                          queue_size=1)
+                                            self.initialize_robot_pose,
+                                            queue_size=1)
         self.odom_pub  = rospy.Publisher("/pf/pose/odom", Odometry, queue_size = 1)
         self.transform_pub = tf2_ros.TransformBroadcaster()
         self.visualizer = rospy.Publisher("/particles", PoseArray, queue_size = 15)
 
-        # Create lock
-        self.particle_lock = Lock()
-
-        # Initialize variables
-        self.particles = np.zeros((self.num_particles, 3))
-        self.particle_indices = np.arange(0, self.num_particles)
-        self.prev_time = rospy.get_time()
 
 
     def initialize_robot_pose(self, msg):
