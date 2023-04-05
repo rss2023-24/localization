@@ -132,6 +132,12 @@ class ParticleFilter:
         average_y = np.average(self.particles[:, 1])
         average_theta = np.arctan2(np.sum(np.sin(self.particles[:, 2])), np.sum(np.cos(self.particles[:, 2]))) # Circular Mean
 
+        # standard deviation of the center of mass 
+        distances = np.sqrt(np.power(self.particles[:, 0] - average_x, 2) +  np.power(self.particles[:, 1] - average_y, 2))
+        avg_distance = np.mean(distances)
+        print(avg_distance)
+
+
         # Create Transform
         transform_obj = TransformStamped()
         curr_time = rospy.Time.now()
