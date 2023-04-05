@@ -149,7 +149,7 @@ class ParticleFilter:
             self.update_steps = np.append(self.update_steps, self.update_step_count)
             self.update_step_count = 0
 
-            time_diff = (curr_time - self.start_time).to_nsec() # In nanoseconds
+            time_diff = (curr_time - self.start_time).to_sec() # In nanoseconds
             self.update_times = np.append(self.update_times, time_diff)
             self.start_time = curr_time
 
