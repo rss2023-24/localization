@@ -26,7 +26,7 @@ class ParticleFilter:
 
         # Tunable Parameters 
         # TODO Tune this value
-        self.noise_st_dev = 1
+        self.noise_st_dev = 0.7
 
         # Initialize the models
         self.motion_model = MotionModel()
