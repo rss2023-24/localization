@@ -6,7 +6,7 @@ class MotionModel:
     def __init__(self):
         self.deterministic = rospy.get_param("~deterministic")
         self.num_particles = rospy.get_param("~num_particles")
-        self.noise_st_dev = 0.1
+        self.noise_st_dev = 0.0
 
 
     def evaluate(self, particles, odometry):
