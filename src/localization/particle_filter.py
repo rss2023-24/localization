@@ -55,6 +55,9 @@ class ParticleFilter:
         self.odom_pub  = rospy.Publisher("/pf/pose/odom", Odometry, queue_size = 1)
         self.transform_pub = tf2_ros.TransformBroadcaster()
         self.visualizer = rospy.Publisher("/particles", PoseArray, queue_size = 15)
+
+        self.start_time = rospy.Time.now()
+        self.update_times = np.array([])
         self.update_step_count = 0
         self.update_steps = np.array([])
 
@@ -130,6 +133,9 @@ class ParticleFilter:
     def compute_robot_pose(self):
         #TODO Figure out if there is a better way to estimate pose
         # Average location of all particles
+
+        curr_time = rospy.Time.now()
+
         average_x = np.average(self.particles[:, 0])
         average_y = np.average(self.particles[:, 1])
         average_theta = np.arctan2(np.sum(np.sin(self.particles[:, 2])), np.sum(np.cos(self.particles[:, 2]))) # Circular Mean
@@ -142,12 +148,16 @@ class ParticleFilter:
         else:
             self.update_steps = np.append(self.update_steps, self.update_step_count)
             self.update_step_count = 0
-            print(np.mean(self.update_steps))
 
+            time_diff = (curr_time - self.start_time).to_nsec() # In nanoseconds
+            self.update_times = np.append(self.update_time, time_diff)
+
+            print(np.mean(self.update_steps))
+            print(np.mean(self.update_times))
 
         # Create Transform
         transform_obj = TransformStamped()
-        curr_time = rospy.Time.now()
+        
         transform_obj.header = Header(frame_id='/map', stamp=curr_time)
         transform_obj.child_frame_id = self.particle_filter_frame
         transform_obj.transform.translation = Point(average_x, average_y, 0)
