@@ -55,6 +55,8 @@ class ParticleFilter:
         self.odom_pub  = rospy.Publisher("/pf/pose/odom", Odometry, queue_size = 1)
         self.transform_pub = tf2_ros.TransformBroadcaster()
         self.visualizer = rospy.Publisher("/particles", PoseArray, queue_size = 15)
+        self.update_step_count = 0
+        self.update_steps = np.array([])
 
 
 
@@ -135,7 +137,12 @@ class ParticleFilter:
         # standard deviation of the center of mass 
         distances = np.sqrt(np.power(self.particles[:, 0] - average_x, 2) +  np.power(self.particles[:, 1] - average_y, 2))
         avg_distance = np.mean(distances)
-        print(avg_distance)
+        if (avg_distance > 0.1):
+            self.update_step_count += 1
+        else:
+            self.update_steps = np.append(self.update_steps, self.update_step_count)
+            self.update_step_count = 0
+            print(np.mean(self.update_steps))
 
 
         # Create Transform
