@@ -152,8 +152,8 @@ class ParticleFilter:
             time_diff = (curr_time - self.start_time).to_nsec() # In nanoseconds
             self.update_times = np.append(self.update_time, time_diff)
 
-            print(np.mean(self.update_steps))
-            print(np.mean(self.update_times))
+            print("Average update steps: {}".format(np.mean(self.update_steps)))
+            print("Average update time: {}".format(np.mean(self.update_times)))
 
         # Create Transform
         transform_obj = TransformStamped()
