@@ -150,7 +150,7 @@ class ParticleFilter:
             self.update_step_count = 0
 
             time_diff = (curr_time - self.start_time).to_nsec() # In nanoseconds
-            self.update_times = np.append(self.update_time, time_diff)
+            self.update_times = np.append(self.update_times, time_diff)
 
             print("Average update steps: {}".format(np.mean(self.update_steps)))
             print("Average update time: {}".format(np.mean(self.update_times)))
