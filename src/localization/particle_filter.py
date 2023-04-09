@@ -39,8 +39,6 @@ class ParticleFilter:
         self.particles = np.zeros((self.num_particles, 3))
         self.particle_indices = np.arange(0, self.num_particles)
         self.prev_time = rospy.get_time()
-        self.distance_threshold = None
-        self.count = 0
 
         # Initialize publishers/subscribers
         scan_topic = rospy.get_param("~scan_topic", "/scan")
@@ -147,18 +145,11 @@ class ParticleFilter:
         avg_distance = np.mean(distances)
 
         print("Dist numbers")
-        # print(distances)
+        print(distances)
         print(avg_distance)
-        # print("\n\n\n")
+        print("\n\n\n")
 
-        if self.distance_threshold is None:
-            self.distance_threshold = 100 # initialize to a maximum value
-        # set threshold as convergence after 10 timesteps, assumes robot is stationary at start
-        if self.count < 10:
-            self.count += 1
-            self.distance_threshold = min(avg_distance, self.distance_threshold)
-
-        if (avg_distance >= self.distance_threshold):
+        if (avg_distance > 0.1):
             self.update_step_count += 1
         else:
             self.update_steps = np.append(self.update_steps, self.update_step_count)
