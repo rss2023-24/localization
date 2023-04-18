@@ -26,11 +26,11 @@ class ParticleFilter:
 
         # Get parameters
         self.particle_filter_frame = rospy.get_param("~particle_filter_frame")
-        self.MAX_PARTICLES         = int(rospy.get_param("~num_particles"))
-        self.MAX_VIZ_PARTICLES     = int(rospy.get_param("~max_viz_particles"))
+        self.MAX_PARTICLES         = int(rospy.get_param("~num_particles", "400"))
+        self.MAX_VIZ_PARTICLES     = int(rospy.get_param("~max_viz_particles", "60"))
         self.PUBLISH_ODOM          = bool(rospy.get_param("~publish_odom", "1"))
-        self.ANGLE_STEP            = int(rospy.get_param("~angle_step"))
-        self.DO_VIZ                = bool(rospy.get_param("~do_viz"))
+        self.ANGLE_STEP            = int(rospy.get_param("~angle_step", "1.0"))
+        self.DO_VIZ                = bool(rospy.get_param("~do_viz", "1"))
 
         # MCL algorithm
         self.iters = 0
