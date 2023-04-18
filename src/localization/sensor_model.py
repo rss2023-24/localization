@@ -1,42 +1,43 @@
+from __future__ import division
 import numpy as np
-from localization.scan_simulator_2d import PyScanSimulator2D
-# Try removing the `localization.` if any sort of import error
-# occurs with scan_simulator_2d
+from scan_simulator_2d import PyScanSimulator2D
+# Try to change to just `from scan_simulator_2d import PyScanSimulator2D` 
+# if any error re: scan_simulator_2d occurs
 
 import rospy
 import tf
 from nav_msgs.msg import OccupancyGrid
 from tf.transformations import quaternion_from_euler
 
-# visualizations
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
-from matplotlib.ticker import LinearLocator, FormatStrFormatter
-
 class SensorModel:
 
 
     def __init__(self):
-
         # Fetch parameters
         self.map_topic = rospy.get_param("~map_topic")
         self.num_beams_per_particle = rospy.get_param("~num_beams_per_particle")
         self.scan_theta_discretization = rospy.get_param("~scan_theta_discretization")
         self.scan_field_of_view = rospy.get_param("~scan_field_of_view")
-        self.INV_SQUASH_FACTOR = 1.0 / float(rospy.get_param("~squash_factor"))
+        self.lidar_scale_to_map_scale = rospy.get_param("~lidar_scale_to_map_scale", 1.0)
+
 
         ####################################
-        # Precompute the sensor model here
-        # (You should probably write a
-        #  function for this)
-        self.MAX_RANGE_PX = 200
-        self.table_width = self.MAX_RANGE_PX + 1
-        self.LIDAR_SCALE_TO_MAP_SCALE = rospy.get_param("~lidar_scale_to_map_scale", 1.0)
-        self.sensor_model_table = None
-        self.particle_scans = None
-        self.precompute_sensor_model()
+        # TODO
+        # Adjust these parameters
+        self.alpha_hit = 0.74
+        self.alpha_short = 0.07
+        self.alpha_max = 0.07
+        self.alpha_rand = 0.12
+        self.sigma_hit = 8.0
+        self.squash = 1.0/2.2
+
+        # Your sensor table will be a `table_width` x `table_width` np array:
+        self.table_width = 201
         ####################################
+
+        # Precompute the sensor model table
+        self.sensor_model_table = None
+        self.precompute_sensor_model()
 
         # Create a simulated laser scan
         self.scan_sim = PyScanSimulator2D(
@@ -44,13 +45,11 @@ class SensorModel:
                 self.scan_field_of_view,
                 0, # This is not the simulator, don't add noise
                 0.01, # This is used as an epsilon
-                self.scan_theta_discretization)
+                self.scan_theta_discretization) 
 
         # Subscribe to the map
-        self.map_set = False
         self.map = None
-        self.permissible_region = None
-        self.map_info = None
+        self.map_set = False
         rospy.Subscriber(
                 self.map_topic,
                 OccupancyGrid,
@@ -58,80 +57,38 @@ class SensorModel:
                 queue_size=1)
 
     def precompute_sensor_model(self):
-        '''
-        Generate and store a table which represents the sensor model. For each discrete computed
-        range value, this provides the probability of measuring any (discrete) range.
-        This table is indexed by the sensor model at runtime by discretizing the measurements
-        and computed ranges from RangeLibc.
-        '''
-        #print("Precomputing sensor model")
+        """
+        Generate and store a table which represents the sensor model.
+        
+        For each discrete computed range value, this provides the probability of 
+        measuring any (discrete) range. This table is indexed by the sensor model
+        at runtime by discretizing the measurements and computed ranges from
+        RangeLibc.
+        This table must be implemented as a numpy 2D array.
 
-        # sensor model constants
-        alpha_hit = 0.74
-        alpha_short = 0.07
-        alpha_max = 0.07
-        alpha_rand = 0.12
-        sigma_hit = 8.0
+        Compute the table based on class parameters alpha_hit, alpha_short,
+        alpha_max, alpha_rand, sigma_hit, and table_width.
 
-        self.sensor_model_table = np.zeros((self.table_width, self.table_width))
-
-        hit_array = np.zeros(self.table_width)
-
-        # d is the computed range from RangeLibc
+        args:
+            N/A
+        
+        returns:
+            No return type. Directly modify `self.sensor_model_table`.
+        """
+        p_hit_table = np.zeros((self.table_width, self.table_width))
+        other_p_table = np.zeros((self.table_width, self.table_width))
         for d in range(self.table_width):
-            norm = 0.0
-            sum_unkown = 0.0
-            hit_sum = 0.0
-
-            # r is the observed range from the lidar unit
-            for r in range(self.table_width):
-                prob = 0.0
-
-                # reflects from the intended object
-                hit_val = np.exp(-(float(r-d)**2) / (2.0*sigma_hit**2)) / (sigma_hit * np.sqrt(2.0*np.pi))
-                hit_sum += hit_val
-                hit_array[r] = hit_val
-
-                # observed range is less than the predicted range - short reading
-                if r <= d and d != 0:
-                    prob += 2.0 * alpha_short * (d - r) / float(d**2)
-
-                # erroneous max range measurement
-                if r == self.MAX_RANGE_PX:
-                    prob += alpha_max
-
-                # random measurement
-                if r <= self.MAX_RANGE_PX:
-                    prob += alpha_rand * 1.0 / float(self.MAX_RANGE_PX)
-
-                norm += prob
-                self.sensor_model_table[r, d] = prob
-
-            # normalize p_hit values (discrete Gaussian, so continuous equation doesn't quite work)
-            self.sensor_model_table[:, d] += alpha_hit * hit_array / hit_sum
-            norm += alpha_hit
-
-            # normalize so that probabilities of each column sum to 1
-            self.sensor_model_table[:, d] /= norm
-
-        #self.visualize_sensor_table()
-
-    def visualize_sensor_table(self):
-        fig = plt.figure()
-        ax = fig.gca(projection='3d')
-
-        X = np.arange(0, self.table_width, 1.0)
-        Y = np.arange(0, self.table_width, 1.0)
-        X,Y = np.meshgrid(X, Y)
-
-        surf = ax.plot_surface(X, Y, self.sensor_model_table, rstride=2, cstride=2, linewidth=0,antialiased=True)
-
-        ax.text2D(0.05, 0.95, "Precomputed Sensor Model", transform=ax.transAxes)
-        ax.set_xlabel("GT distance")
-        ax.set_ylabel("Measured Distance")
-        ax.set_zlabel("P(Measured Distance | GT)")
-
-        plt.show()
+            for z in range(self.table_width):
+                p_hit_table[z, d] = self.p_hit(z, self.table_width-1, d, self.sigma_hit)
+                other_p_table[z, d] = (self.alpha_short * self.p_short(z, d) 
+                                        + self.alpha_max * self.p_max(z, self.table_width-1) 
+                                        + self.alpha_rand * self.p_rand(z, self.table_width-1))
+        col_sums = p_hit_table.sum(axis=0)
+        p_hit_table /= col_sums # normalize p_hit across d values
+        self.sensor_model_table = other_p_table + self.alpha_hit * p_hit_table
+        col_sums = self.sensor_model_table.sum(axis=0)
+        self.sensor_model_table /= col_sums # normalize full table along columns
+        
 
     def evaluate(self, particles, observation):
         """
@@ -140,7 +97,7 @@ class SensorModel:
 
         args:
             particles: An Nx3 matrix of the form:
-
+            
                 [x0 y0 theta0]
                 [x1 y0 theta1]
                 [    ...     ]
@@ -162,40 +119,35 @@ class SensorModel:
         #
         # You will probably want to use this function
         # to perform ray tracing from all the particles.
-        # This produces a matrix of size N x num_beams_per_particle
+        # This produces a matrix of size N x num_beams_per_particle 
 
-        #stupid_particles = np.copy(particles)
-        #stupid_particles += [0, 0, np.pi]
+        # Generate Scan Data
+        scans = self.scan_sim.scan(particles)
+        
+        # Convert measurements to pixel space
+        conversion_factor = float(self.map_resolution)*self.lidar_scale_to_map_scale
 
-        self.particle_scans = self.scan_sim.scan(particles)
+        pixels_scans = scans / conversion_factor
+        pixels_observation = observation / conversion_factor
 
-        observation /= float(self.map_info.resolution)*self.LIDAR_SCALE_TO_MAP_SCALE
-        self.particle_scans /= float(self.map_info.resolution)*self.LIDAR_SCALE_TO_MAP_SCALE
+        clipped_scans = np.clip(pixels_scans, 0, self.table_width - 1)
+        clipped_observation = np.clip(pixels_observation, 0, self.table_width - 1)
 
-        #rospy.loginfo(np.mean(observation))
+        scaled_scans = np.rint(clipped_scans).astype(np.uint16)
+        scaled_observation = np.rint(clipped_observation).astype(np.uint16)
 
-        observation[observation > self.MAX_RANGE_PX] = self.MAX_RANGE_PX
-        self.particle_scans[self.particle_scans > self.MAX_RANGE_PX] = self.MAX_RANGE_PX
-        observation[observation < 0 ] = 0
-        self.particle_scans[self.particle_scans < 0] = 0
+        # Compute probablities
+        probabilities = np.prod(self.sensor_model_table[scaled_observation, scaled_scans], axis = 1)
 
-        intobs = np.rint(observation).astype(np.uint16)
-        intscn = np.rint(self.particle_scans).astype(np.uint16)
-
-        prob = np.prod(self.sensor_model_table[intobs, intscn], axis=1)
-        np.power(prob, self.INV_SQUASH_FACTOR, prob)
-        return prob
-
+        # Smooth probability curve
+        probabilities = np.power(probabilities, 1.0/2.2)
+        return probabilities
         ####################################
-
-    def get_scans(self, particles):
-        return self.scan_sim.scan(particles)
 
     def map_callback(self, map_msg):
         # Convert the map to a numpy array
         self.map = np.array(map_msg.data, np.double)/100.
         self.map = np.clip(self.map, 0, 1)
-        self.map_info = map_msg.info
 
         # Convert the origin to a tuple
         origin_p = map_msg.info.origin.position
@@ -206,7 +158,6 @@ class SensorModel:
                 origin_o.z,
                 origin_o.w))
         origin = (origin_p.x, origin_p.y, origin_o[2])
-        print(("map origin", origin))
 
         # Initialize a map with the laser scan
         self.scan_sim.set_map(
@@ -217,12 +168,31 @@ class SensorModel:
                 origin,
                 0.5) # Consider anything < 0.5 to be free
 
-        # 0: permissible, -1: unmapped, 100: blocked
-        array_255 = np.array(map_msg.data).reshape((map_msg.info.height, map_msg.info.width))
-        # 0: not permissible, 1: permissible
-        self.permissible_region = np.zeros_like(array_255, dtype=bool)
-        self.permissible_region[array_255==0] = 1
         # Make the map set
         self.map_set = True
 
+        self.map_resolution = map_msg.info.resolution
+
         print("Map initialized")
+
+    def p_hit(self, z, z_max, d, sigma):
+        p = 0
+        if 0 <= z and z <= z_max:
+            exp_term = - (z-d)**2 / (2 * sigma**2)
+            p = (1/np.sqrt(2 * np.pi * sigma**2)) * np.exp(exp_term)
+        return p
+
+    def p_short(self, z, d):
+        p = 0
+        if 0 <= z and z <= d and d != 0:
+            p = (2/d) * (1 - z / d)
+        return p
+
+    def p_max(self, z, z_max):
+        return 1 if z == z_max else 0
+
+    def p_rand(self, z, z_max):
+        p = 0
+        if 0 <= z and z <= z_max:
+            p = 1./ z_max
+        return  p
